@@ -1,0 +1,344 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Claude 額度監控</title>
+<style>
+  :root{
+    --bg:#f4efe6; --card:#fffdf8; --ink:#2c2622; --sub:#8a7f72; --line:#e7decd;
+    --accent:#c96442; --ok:#5b8c5a; --warn:#c9a227; --danger:#c0453b;
+    --bar-bg:#ece3d3;
+  }
+  @media (prefers-color-scheme: dark){
+    :root{ --bg:#1c1916; --card:#26221e; --ink:#efe7da; --sub:#a99e8d; --line:#3a342d;
+           --accent:#e2825e; --bar-bg:#332e28; }
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);overflow-x:hidden;
+       font-family:"Microsoft JhengHei","Segoe UI",system-ui,sans-serif;
+       -webkit-font-smoothing:antialiased;padding:16px 14px 40px;}
+  header{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;gap:10px}
+  h1{font-size:19px;margin:0;font-weight:700;letter-spacing:.5px}
+  .ver{font-size:11px;color:var(--sub)}
+  .toolbar{display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap}
+  button{font-family:inherit;font-size:13px;border:1px solid var(--line);background:var(--card);
+         color:var(--ink);border-radius:10px;padding:8px 13px;cursor:pointer;transition:.15s}
+  button:hover{border-color:var(--accent)}
+  button.primary{background:var(--accent);color:#fff;border-color:var(--accent)}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:16px;overflow:hidden;
+        padding:15px 16px;margin-bottom:12px;box-shadow:0 1px 3px rgba(0,0,0,.04)}
+  .chead{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;gap:8px}
+  .cname{font-size:15px;font-weight:700;display:flex;align-items:center;gap:6px;min-width:0;flex:1 1 auto}
+  .cnamewrap{display:flex;flex-direction:column;min-width:0;flex:1 1 auto}
+  .cmailtitle{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+  .cplan{font-size:11px;color:var(--sub);font-weight:400;margin-top:1px}
+  .cmailtitle.loading{color:var(--sub);font-weight:400}
+  .edit{font-size:12px;color:var(--sub);border:none;background:none;padding:2px 5px;cursor:pointer;flex:0 0 auto}
+  .edit:hover{color:var(--accent)}
+  .badge{font-size:10px;font-weight:700;color:#fff;background:var(--accent);border-radius:6px;
+         padding:2px 6px;margin-left:6px;flex:0 0 auto;white-space:nowrap}
+  .card.pinned{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent),0 1px 3px rgba(0,0,0,.06)}
+  .dot{width:9px;height:9px;border-radius:50%;background:var(--ok);flex:0 0 auto}
+  .dot.bad{background:var(--danger)} .dot.stale{background:var(--sub)}
+  .del{font-size:12px;color:var(--sub);border:none;background:none;padding:4px 6px;flex:0 0 auto;white-space:nowrap}
+  .del:hover{color:var(--danger)}
+  .row{margin:11px 0}
+  .rtop{display:flex;justify-content:space-between;align-items:baseline;font-size:13px;margin-bottom:5px}
+  .rtop .lbl{color:var(--sub)} .rtop .pct{font-weight:700;font-size:15px}
+  .bar{height:9px;border-radius:6px;background:var(--bar-bg);overflow:hidden}
+  .fill{height:100%;border-radius:6px;background:var(--ok);width:0;transition:width .4s}
+  .fill.warn{background:var(--warn)} .fill.danger{background:var(--danger)}
+  .reset{font-size:11.5px;color:var(--sub);margin-top:4px}
+  .meta{font-size:11.5px;color:var(--sub);margin-top:12px;display:flex;justify-content:space-between}
+  .empty{text-align:center;color:var(--sub);padding:50px 20px;line-height:1.9}
+  .extra{font-size:12px;color:var(--sub);margin-top:8px;padding-top:8px;border-top:1px dashed var(--line)}
+  /* modal */
+  .mask{position:fixed;inset:0;background:rgba(0,0,0,.45);display:none;align-items:center;justify-content:center;padding:16px;z-index:9}
+  .mask.on{display:flex}
+  .modal{background:var(--card);border-radius:16px;padding:20px;width:100%;max-width:430px;border:1px solid var(--line)}
+  .modal h2{margin:0 0 6px;font-size:17px}
+  .modal p{font-size:12.5px;color:var(--sub);line-height:1.7;margin:6px 0 12px}
+  .modal code{background:var(--bar-bg);padding:1px 6px;border-radius:5px;font-size:12px}
+  label{display:block;font-size:12px;color:var(--sub);margin:10px 0 4px}
+  input,textarea{width:100%;font-family:inherit;font-size:13px;padding:9px 11px;border:1px solid var(--line);
+        border-radius:9px;background:var(--bg);color:var(--ink)}
+  textarea{min-height:66px;resize:vertical;word-break:break-all}
+  .mbtns{display:flex;gap:8px;margin-top:16px;justify-content:flex-end}
+  .err{color:var(--danger);font-size:12px;margin-top:8px;min-height:16px}
+  #toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);z-index:20;
+         display:flex;flex-direction:column;gap:8px;align-items:center;pointer-events:none;width:calc(100% - 32px);max-width:400px}
+  .toast{background:var(--ink);color:var(--card);font-size:13px;padding:10px 16px;border-radius:10px;
+         box-shadow:0 4px 16px rgba(0,0,0,.25);opacity:0;transition:opacity .2s;max-width:100%;
+         word-break:break-word;text-align:center}
+  .toast.show{opacity:.96}
+</style>
+</head>
+<body>
+  <header>
+    <h1>Claude 額度監控</h1>
+    <span class="ver" id="ver"></span>
+  </header>
+  <div class="toolbar">
+    <button class="primary" onclick="openLogin()">＋ 加入帳號</button>
+    <button onclick="refresh(true)">↻ 立即整理</button>
+    <button onclick="openAdd()">手動貼權杖</button>
+  </div>
+  <div id="list"></div>
+
+  <div class="mask" id="mask">
+    <div class="modal">
+      <h2>手動加入（備援）</h2>
+      <p>平常直接按工具列的「＋ 登入 Claude 帳號」，會跳出乾淨的登入視窗、登入完自動加入。
+         這裡是備援：若登入視窗沒自動完成，或你已有長期權杖，可手動貼上。</p>
+      <label>方式一：貼上登入視窗顯示的代碼</label>
+      <textarea id="fCode" placeholder="登入頁顯示的代碼…" autocomplete="off" spellcheck="false"></textarea>
+      <div class="mbtns" style="justify-content:flex-start">
+        <button class="primary" id="fSave" onclick="oauthComplete()">用代碼完成</button>
+      </div>
+      <label>方式二：貼上 <code>sk-ant-oat01-…</code> 長期權杖</label>
+      <textarea id="fToken" placeholder="sk-ant-oat01-..." autocomplete="off" spellcheck="false"></textarea>
+      <div class="mbtns" style="justify-content:flex-start">
+        <button class="primary" onclick="saveAcc()">用權杖加入</button>
+      </div>
+      <div class="err" id="fErr"></div>
+      <div class="mbtns"><button onclick="closeAdd()">關閉</button></div>
+    </div>
+  </div>
+
+  <!-- login: show a copyable URL so the user can paste it into whichever browser has the right account -->
+  <div class="mask" id="loginMask">
+    <div class="modal">
+      <h2>加入 Claude 帳號</h2>
+      <p>按下方會開你的瀏覽器，用「<b>你要監控的那個帳號</b>」登入並授權，完成後<b>自動加入</b>（不用複製任何東西）。<br>
+         多帳號：切換瀏覽器帳號／換一個瀏覽器，再按一次加下一隻。</p>
+      <p style="color:var(--ok);font-size:12px;line-height:1.7">✓ 用<b>獨立資料夾</b>登入，完成即刪，<b>不會動到你自己 Claude Code 的登入</b>。</p>
+      <div class="err" id="loginErr"></div>
+      <div class="mbtns">
+        <button onclick="closeLogin()">關閉</button>
+        <button class="primary" id="loginSubmit" onclick="cliLogin()">▶ 開始登入（開瀏覽器）</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- self-drawn confirm (avoids the native "localhost:45900 說" dialog) -->
+  <div class="mask" id="confMask">
+    <div class="modal">
+      <p id="confMsg" style="color:var(--ink);font-size:14px;margin:2px 0 4px"></p>
+      <div class="mbtns">
+        <button onclick="confHide()">取消</button>
+        <button class="primary" id="confOk">確定</button>
+      </div>
+    </div>
+  </div>
+  <div id="toast"></div>
+
+<script>
+var API = ""; // same origin
+function fmtPct(v){ return (v==null?0:Math.round(v)) + "%"; }
+function fillClass(v){ v=v||0; return v>=90?"fill danger":(v>=70?"fill warn":"fill"); }
+
+function fmtWhen(iso){
+  if(!iso) return "—";
+  var t = new Date(iso).getTime(); if(isNaN(t)) return "—";
+  var diff = t - Date.now();
+  if(diff <= 0) return "已重置";
+  var m = Math.floor(diff/60000), h = Math.floor(m/60), d = Math.floor(h/24);
+  var s;
+  if(d>0) s = d+" 天 "+(h%24)+" 小時後";
+  else if(h>0) s = h+" 小時 "+(m%60)+" 分後";
+  else s = m+" 分後";
+  var dt = new Date(t);
+  var hh=("0"+dt.getHours()).slice(-2), mm=("0"+dt.getMinutes()).slice(-2);
+  var md=(dt.getMonth()+1)+"/"+dt.getDate();
+  return s+"（"+md+" "+hh+":"+mm+"）";
+}
+function fmtAgo(ms){
+  if(!ms) return "尚未更新";
+  var d = Date.now()-ms; var s=Math.floor(d/1000);
+  if(s<10) return "剛剛更新";
+  if(s<60) return s+" 秒前更新";
+  var m=Math.floor(s/60); if(m<60) return m+" 分前更新";
+  return Math.floor(m/60)+" 小時前更新";
+}
+
+function windowRow(lbl, w){
+  if(!w) return "";
+  var v = w.utilization;
+  return '<div class="row">'
+    + '<div class="rtop"><span class="lbl">'+lbl+'</span><span class="pct">'+fmtPct(v)+'</span></div>'
+    + '<div class="bar"><div class="'+fillClass(v)+'" style="width:'+Math.min(100,v||0)+'%"></div></div>'
+    + '<div class="reset">重置：'+fmtWhen(w.resets_at)+'</div>'
+    + '</div>';
+}
+
+function extraRow(ex){
+  if(!ex || !ex.is_enabled) return "";
+  var u = ex.utilization==null? "" : "（已用 "+Math.round(ex.utilization)+"%）";
+  return '<div class="extra">加購額度：啟用中 '+u+'</div>';
+}
+
+function render(state){
+  document.getElementById("ver").textContent = state.version || "";
+  var list = document.getElementById("list");
+  if(!state.accounts || state.accounts.length===0){
+    list.innerHTML = '<div class="empty">還沒有任何帳號。<br>點左上「＋ 加入帳號」，跑一次官方登入、貼上權杖就會開始監控。</div>';
+    return;
+  }
+  var cli = state.cliEmail || "";
+  var accts = state.accounts.slice();
+  // pin the account matching the current CLI login to the top, then alphabetical (no email last)
+  accts.sort(function(a,b){
+    var ca=(cli && a.email===cli)?0:1, cb=(cli && b.email===cli)?0:1;
+    if(ca!==cb) return ca-cb;
+    var ea=a.email||"￿", eb=b.email||"￿";
+    return ea<eb?-1:(ea>eb?1:0);
+  });
+  var html = "";
+  var letter = 0;
+  accts.forEach(function(a){
+    var raw = a.raw;
+    var dotCls="dot", head="";
+    if(a.error || (a.status && a.status>=400)){ dotCls="dot bad"; }
+    else if(!a.updatedMs){ dotCls="dot stale"; }
+
+    var body="";
+    if(raw){
+      body += windowRow("5 小時（工作階段）", raw.five_hour);
+      body += windowRow("7 天（週限）", raw.seven_day);
+      // per-model scoped weekly limits, if present
+      if(raw.limits){
+        raw.limits.forEach(function(L){
+          if(L.kind==="weekly_scoped" && L.scope && L.scope.model && L.percent>0){
+            body += '<div class="row"><div class="rtop"><span class="lbl">7 天・'
+              + (L.scope.model.display_name||"model") + '</span><span class="pct">'+fmtPct(L.percent)+'</span></div>'
+              + '<div class="bar"><div class="'+fillClass(L.percent)+'" style="width:'+Math.min(100,L.percent)+'%"></div></div></div>';
+          }
+        });
+      }
+      body += extraRow(raw.extra_usage);
+    } else if(a.error){
+      body = '<div class="reset" style="color:var(--danger)">讀取失敗：'+a.error+'</div>'
+           + '<div class="mbtns" style="justify-content:flex-start;margin-top:8px">'
+           + '<button class="primary" onclick="relogin(\''+a.id+'\')">🔄 重新登入</button></div>';
+    } else {
+      body = '<div class="reset">讀取中…（首次約需數秒）</div>';
+    }
+
+    var title;
+    if(a.email){ title=esc(a.email); }
+    else { title="帳號 "+String.fromCharCode(65+(letter%26)); letter++; }
+    var planSub = a.plan ? '<span class="cplan">'+esc(a.plan)+' 方案</span>' : '';
+    var isCli = cli && a.email===cli;
+    var badge = isCli ? '<span class="badge">目前 CLI</span>' : '';
+    html += '<div class="card'+(isCli?' pinned':'')+'">'
+      + '<div class="chead"><span class="cname"><span class="'+dotCls+'"></span>'
+      + '<span class="cnamewrap"><span class="cmailtitle">'+title+'</span>'+planSub+'</span>'+badge
+      + '</span>'
+      + '<button class="del" onclick="delAcc(\''+a.id+'\',\''+esc(a.email||title)+'\')">刪除</button></div>'
+      + body
+      + '<div class="meta"><span>'+fmtAgo(a.updatedMs)+'</span><span>'+(a.status?("HTTP "+a.status):"")+'</span></div>'
+      + '</div>';
+  });
+  list.innerHTML = html;
+}
+function esc(s){ return (s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/'/g,"&#39;"); }
+
+function load(){
+  fetch(API+"/api/state").then(function(r){return r.json();}).then(render).catch(function(){});
+}
+function refresh(force){
+  if(force) fetch(API+"/api/refresh",{method:"POST"}).then(function(){setTimeout(load,600);});
+  else load();
+}
+// ---- self-drawn confirm + toast (no native "localhost:45900 說" chrome) ----
+function toast(msg){
+  var box=document.getElementById("toast");
+  var t=document.createElement("div"); t.className="toast"; t.textContent=msg;
+  box.appendChild(t);
+  requestAnimationFrame(function(){ t.classList.add("show"); });
+  setTimeout(function(){ t.classList.remove("show"); setTimeout(function(){ if(t.parentNode) t.parentNode.removeChild(t); },250); }, 2600);
+}
+function uiConfirm(msg, onOk){
+  document.getElementById("confMsg").textContent=msg;
+  document.getElementById("confMask").classList.add("on");
+  var ok=document.getElementById("confOk");
+  ok.onclick=function(){ confHide(); onOk(); };
+}
+function confHide(){ document.getElementById("confMask").classList.remove("on"); }
+
+// ---- add account by running `claude auth login` into an isolated config dir (auto, no paste) ----
+function openLogin(){
+  document.getElementById("loginErr").textContent="";
+  document.getElementById("loginMask").classList.add("on");
+}
+function closeLogin(){ document.getElementById("loginMask").classList.remove("on"); }
+function cliLogin(){
+  var err=document.getElementById("loginErr"); err.textContent="";
+  var b=document.getElementById("loginSubmit"); b.disabled=true; b.textContent="開啟中…";
+  fetch(API+"/api/accounts/cli-login",{method:"POST"}).then(function(r){return r.json();}).then(function(res){
+    b.disabled=false; b.textContent="▶ 開始登入（開瀏覽器）";
+    if(res.ok){ toast("已開啟登入，請在瀏覽器授權，完成後會自動加入（約數秒~數十秒）"); closeLogin(); }
+    else err.textContent=res.error||"無法開啟登入";
+  }).catch(function(e){ b.disabled=false; b.textContent="▶ 開始登入（開瀏覽器）"; err.textContent="無法開啟登入："+e; });
+}
+// ---- manual fallback modal ----
+function openAdd(){
+  document.getElementById("fErr").textContent="";
+  document.getElementById("fCode").value="";
+  var t=document.getElementById("fToken"); if(t) t.value="";
+  document.getElementById("mask").classList.add("on");
+}
+function closeAdd(){
+  document.getElementById("mask").classList.remove("on");
+  document.getElementById("fCode").value="";
+  var t=document.getElementById("fToken"); if(t) t.value="";
+}
+function oauthComplete(){
+  var code=document.getElementById("fCode").value.trim();
+  var err=document.getElementById("fErr"); err.textContent="";
+  if(!code){ err.textContent="請先按①登入，再把頁面給的代碼貼進②。"; return; }
+  var btn=document.getElementById("fSave"); btn.disabled=true; btn.textContent="登入中…";
+  fetch(API+"/api/oauth/complete",{method:"POST",headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({code:code})})
+    .then(function(r){return r.json();})
+    .then(function(res){
+      btn.disabled=false; btn.textContent="③ 完成登入";
+      if(res.ok){ closeAdd(); setTimeout(load,500); }
+      else err.textContent="登入失敗："+(res.error||"未知錯誤");
+    })
+    .catch(function(e){ btn.disabled=false; btn.textContent="③ 完成登入"; err.textContent="登入失敗："+e; });
+}
+// ---- fallback: paste a long-lived token ----
+function saveAcc(){
+  var token=document.getElementById("fToken").value.trim();
+  var err=document.getElementById("fErr");
+  if(token.indexOf("sk-ant-oat")!==0){ err.textContent="權杖格式不對，應以 sk-ant-oat01- 開頭。"; return; }
+  fetch(API+"/api/accounts",{method:"POST",headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({token:token})})
+    .then(function(r){return r.json();})
+    .then(function(res){
+      if(res.ok){ closeAdd(); setTimeout(load,500); }
+      else err.textContent="加入失敗："+(res.error||"未知錯誤");
+    })
+    .catch(function(e){ err.textContent="加入失敗："+e; });
+}
+function relogin(id){
+  fetch(API+"/api/accounts/relogin",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({id:id})})
+    .then(function(r){return r.json();}).then(function(res){
+      if(res.ok) toast("已開啟登入，請在瀏覽器用同一個帳號授權，完成後會自動恢復");
+      else toast(res.error||"無法開啟登入");
+    }).catch(function(e){ toast("無法開啟登入："+e); });
+}
+function delAcc(id,name){
+  uiConfirm("確定要移除「"+name+"」的監控嗎？（不影響該帳號本身）", function(){
+    fetch(API+"/api/accounts/delete",{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({id:id})}).then(function(){setTimeout(load,300);});
+  });
+}
+
+load();
+setInterval(load, 15000);          // refresh the view every 15s (server polls Anthropic at 180s)
+</script>
+</body>
+</html>

@@ -1,0 +1,9 @@
+# local version history / build output (kept out of the repo; distributed as release assets)
+releases/
+ClaudeQuotaMonitor.exe
+
+# runtime data — must never be committed
+*.log
+accounts.json
+accts/
+wv2/

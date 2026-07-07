@@ -1,0 +1,133 @@
+# Claude Quota Monitor / Claude 額度監控
+
+A tiny Windows desktop app that watches the usage of one or more **Claude subscription** accounts (Pro / Max) at a glance: 5-hour session window, 7-day weekly limit, reset countdowns, per-model limits and extra-usage balance.
+
+<!-- -->
+
+一個輕巧的 Windows 桌面小工具，一眼盯著一支或多支 **Claude 訂閱**帳號（Pro / Max）的用量：5 小時工作階段、7 天週限、重置倒數、各模型分項與加購額度。
+
+Author / 作者: [YangMieh](https://github.com/YangMieh) (小咩)
+
+Version / 版本: v1.2.2
+
+---
+
+## Features
+
+- Multiple accounts at once, each on its own card (percent used, reset countdown, plan tier).
+- The account your Claude CLI is currently signed into is pinned to the top with a badge.
+- Adds an account by running the official `claude` login **into an isolated config folder**, so it never touches your real `~/.claude` login.
+- Reads the subscription-usage token the login produces, refreshes it automatically, and never asks you to copy-paste anything.
+- Tokens are stored per-Windows-user, DPAPI-encrypted; the exe itself ships with zero tokens.
+
+<!-- -->
+
+## 功能
+
+- 一次盯多支帳號，每支一張卡（用了幾 %、重置倒數、訂閱方案）。
+- 你 Claude CLI 目前登入的那支會**置頂並標上徽章**。
+- 加帳號 = 把官方 `claude` 登入**跑進一個獨立設定資料夾**，完全不動你真正的 `~/.claude` 登入。
+- 讀取登入產生的訂閱用量權杖、自動續命，全程不用你複製貼上任何東西。
+- 權杖以 Windows 使用者身分 DPAPI 加密存放；exe 本身不含任何權杖。
+
+---
+
+## How it works
+
+Claude only issues a usage-capable token (with the `user:profile` scope) through a real `claude` sign-in — `setup-token` gives an inference-only token that returns 403 on the usage endpoint, and rolling your own browser OAuth is blocked by anti-bot on the authorize step. So this app takes the one path that works:
+
+1. It creates a throwaway config folder and runs `claude auth login` with `CLAUDE_CONFIG_DIR` pointed at it. The official login opens your browser (which passes the human check), and writes the account's credentials into that isolated folder only.
+2. The app reads the token from that folder, stores it encrypted, and **deletes the folder immediately** so no plaintext token lingers.
+3. It polls `GET /api/oauth/usage` per account (throttled), and refreshes each token on its own when it nears expiry.
+
+Because every account uses its own isolated folder, multiple accounts coexist without conflict and your main CLI login is never modified.
+
+<!-- -->
+
+## 運作原理
+
+能讀用量的權杖（有 `user:profile` 範圍）只有「真的 `claude` 登入」才會產生——`setup-token` 給的是「只能跑推論」的權杖，打用量端點會回 403；自己刻瀏覽器 OAuth 又在授權那步被反機器人擋掉。所以本工具走唯一可行的那條路：
+
+1. 建一個用完即丟的設定資料夾，把 `CLAUDE_CONFIG_DIR` 指到它、跑 `claude auth login`。官方登入會開你的瀏覽器（真瀏覽器過得了人機驗證），並只把該帳號的憑證寫進那個獨立資料夾。
+2. 從那個資料夾讀出權杖、加密存起來，然後**立刻刪掉資料夾**，磁碟上不留明碼權杖。
+3. 每支帳號各自輪詢 `GET /api/oauth/usage`（有節流），權杖快到期時各自自動刷新。
+
+因為每支帳號用自己的獨立資料夾，多帳號並存不衝突，你主要的 CLI 登入也完全不會被改動。
+
+---
+
+## Requirements
+
+- Windows 10 / 11, with the WebView2 Runtime (built into Win11).
+- .NET Framework 4.x (built into Windows).
+- [Claude Code](https://claude.com/claude-code) (`claude` CLI) installed — needed to sign an account in.
+
+<!-- -->
+
+## 需求
+
+- Windows 10 / 11，含 WebView2 Runtime（Win11 內建）。
+- .NET Framework 4.x（Windows 內建）。
+- 已安裝 [Claude Code](https://claude.com/claude-code)（`claude` CLI）——加帳號登入時需要。
+
+---
+
+## Build & Run
+
+Build with the bundled script (uses the .NET Framework `csc`):
+
+```
+powershell -ExecutionPolicy Bypass -File build.ps1
+```
+
+Keep these next to the produced `ClaudeQuotaMonitor.exe`: `dashboard.html`, `icon.ico`, `WebView2Loader.dll`, `Microsoft.Web.WebView2.Core.dll`, `Microsoft.Web.WebView2.WinForms.dll`. Run the exe (normal user rights); it lives in the system tray and opens a window. To add an account, click "+ 加入帳號" then "開始登入" and authorize in the browser that pops up.
+
+<!-- -->
+
+## 建置與執行
+
+用附的腳本編譯（走 .NET Framework 的 `csc`）：
+
+```
+powershell -ExecutionPolicy Bypass -File build.ps1
+```
+
+以下檔案要跟產出的 `ClaudeQuotaMonitor.exe` 放同一夾：`dashboard.html`、`icon.ico`、`WebView2Loader.dll`、`Microsoft.Web.WebView2.Core.dll`、`Microsoft.Web.WebView2.WinForms.dll`。用一般權限執行 exe，它會在系統匣、開一個視窗。加帳號點「＋ 加入帳號」→「開始登入」，在跳出的瀏覽器授權即可。
+
+---
+
+## Privacy & Security
+
+- Tokens are DPAPI-encrypted (CurrentUser) in `%APPDATA%\ClaudeQuotaMonitor\accounts.json`; only your Windows account can decrypt them.
+- The exe contains no tokens. When you share it, share only the exe + support files, never your `%APPDATA%\ClaudeQuotaMonitor\` folder.
+- The isolated login folder (with its plaintext credential file) is deleted the moment the token is read.
+- The local server binds to `localhost` only.
+
+<!-- -->
+
+## 隱私與安全
+
+- 權杖以 DPAPI（CurrentUser）加密存在 `%APPDATA%\ClaudeQuotaMonitor\accounts.json`，只有你這個 Windows 帳號解得開。
+- exe 不含任何權杖。分享時只給 exe＋相依檔，**絕不要**給你的 `%APPDATA%\ClaudeQuotaMonitor\` 資料夾。
+- 隔離登入的資料夾（含裡面的明碼憑證檔）在讀出權杖的當下就被刪除。
+- 本機伺服器只綁 `localhost`。
+
+---
+
+## Dev log
+
+- Tried to replicate Claude's browser OAuth inside the app (embedded WebView, then the real browser). Every parameter combination was rejected at `claude.ai/v1/oauth/.../authorize` with "Invalid request format" — the grant is gated by Arkose anti-bot plus a first-party client check, so third-party replication is a dead end.
+- Switched to `claude setup-token`. Its token turned out to be inference-scoped: `GET /api/oauth/usage` returned 403 "does not meet scope requirement user:profile". Wrong tool for reading usage.
+- Confirmed the only usage-capable token comes from a normal `claude` sign-in. Discovered `CLAUDE_CONFIG_DIR` lets each sign-in live in its own folder.
+- Final design: run `claude auth login` into an isolated folder, read the token, delete the folder, and self-refresh. Verified end to end — multiple accounts, correct scope, auto-refresh, and the main CLI login untouched.
+- Added: current-CLI-account pinning via `claude auth status --json`, plan tier under the email, and a re-login button that only appears when a card goes offline.
+
+<!-- -->
+
+## 開發日誌
+
+- 先試在 App 內自幹 Claude 的瀏覽器 OAuth（內嵌 WebView，再換真瀏覽器）。所有參數組合都在 `claude.ai/v1/oauth/.../authorize` 被回「Invalid request format」——授權那步被 Arkose 反機器人＋第一方 client 驗證擋著，第三方自幹是死路。
+- 改用 `claude setup-token`。結果它的權杖是「只能跑推論」的：打 `GET /api/oauth/usage` 回 403「缺 user:profile 範圍」。讀用量用錯工具了。
+- 確認能讀用量的權杖只有「一般 `claude` 登入」會產生。發現 `CLAUDE_CONFIG_DIR` 可以讓每次登入各自住在自己的資料夾。
+- 最終設計：把 `claude auth login` 跑進獨立資料夾、讀出權杖、刪掉資料夾、自己刷新。端到端實測通過——多帳號、範圍正確、自動刷新，且主 CLI 登入完全沒被動到。
+- 另加：用 `claude auth status --json` 置頂目前 CLI 帳號、email 下方顯示訂閱方案、卡片斷線時才出現的重新登入鈕。
