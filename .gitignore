@@ -7,3 +7,10 @@ ClaudeQuotaMonitor.exe
 accounts.json
 accts/
 wv2/
+cloud.json
+
+# secrets kept out of the public repo (embedded into the exe at build time)
+gauth.txt
+
+# firebase deploy cache
+cloud/.firebase/

@@ -29,6 +29,9 @@ $resArgs = @(
   "/resource:$dir\Microsoft.Web.WebView2.Core.dll,Microsoft.Web.WebView2.Core.dll",
   "/resource:$dir\Microsoft.Web.WebView2.WinForms.dll,Microsoft.Web.WebView2.WinForms.dll"
 )
+# Google OAuth client id/secret: embedded from a local gitignored file (kept out of the public repo).
+if (Test-Path "$dir\gauth.txt") { $resArgs += "/resource:$dir\gauth.txt,gauth.txt" }
+else { Write-Host "note: gauth.txt not found — the 'Google login sync' button will be disabled in this build." -ForegroundColor Yellow }
 
 $args = @(
   "/target:winexe",

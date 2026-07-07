@@ -82,6 +82,7 @@
   <div class="toolbar">
     <button class="primary" onclick="openLogin()">＋ 加入帳號</button>
     <button onclick="refresh(true)">↻ 立即整理</button>
+    <button onclick="openCloud()">☁ 手機同步</button>
     <button onclick="openAdd()">手動貼權杖</button>
   </div>
   <div id="list"></div>
@@ -117,6 +118,29 @@
       <div class="mbtns">
         <button onclick="closeLogin()">關閉</button>
         <button class="primary" id="loginSubmit" onclick="cliLogin()">▶ 開始登入（開瀏覽器）</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- cloud sync: pair this PC to the user's phone dashboard -->
+  <div class="mask" id="cloudMask">
+    <div class="modal">
+      <h2>手機同步（雲端）</h2>
+      <p id="cloudState" style="font-size:12.5px;margin:2px 0 8px"></p>
+      <p>按下面用 <b>Google 登入</b>（跟你手機儀表板同一個帳號）→ 授權後自動連結，用量會每 30 秒推到手機那頁。免貼任何東西。</p>
+      <div class="mbtns" style="justify-content:flex-start">
+        <button class="primary" onclick="googleLoginSync()">用 Google 登入同步</button>
+      </div>
+      <details style="margin-top:12px">
+        <summary style="cursor:pointer;color:var(--sub);font-size:12px">或改用手動配對碼（備援）</summary>
+        <p style="font-size:12px;color:var(--sub);margin:8px 0 6px">在 claude-quota.web.app 登入 →「配對電腦」→ 複製 → 貼這裡：</p>
+        <textarea id="cloudCode" placeholder="貼上配對碼…" spellcheck="false"></textarea>
+        <div class="mbtns" style="justify-content:flex-start"><button class="primary" onclick="pairCloud()">完成配對</button></div>
+      </details>
+      <div class="err" id="cloudErr"></div>
+      <div class="mbtns">
+        <button onclick="closeCloud()">關閉</button>
+        <button id="cloudUnpair" onclick="unpairCloud()" style="display:none;margin-right:auto">取消同步</button>
       </div>
     </div>
   </div>
@@ -322,6 +346,39 @@ function saveAcc(){
       else err.textContent="加入失敗："+(res.error||"未知錯誤");
     })
     .catch(function(e){ err.textContent="加入失敗："+e; });
+}
+// ---- cloud sync ----
+function openCloud(){
+  document.getElementById("cloudErr").textContent="";
+  document.getElementById("cloudCode").value="";
+  fetch(API+"/api/cloud/status").then(function(r){return r.json();}).then(function(s){
+    document.getElementById("cloudState").innerHTML = s.paired
+      ? '<span style="color:var(--ok)">✓ 已在同步中</span>（要換帳號就貼新的配對碼）'
+      : '尚未同步。';
+    document.getElementById("cloudUnpair").style.display = s.paired ? "inline-block" : "none";
+  }).catch(function(){});
+  document.getElementById("cloudMask").classList.add("on");
+}
+function closeCloud(){ document.getElementById("cloudMask").classList.remove("on"); document.getElementById("cloudCode").value=""; }
+function googleLoginSync(){
+  var err=document.getElementById("cloudErr"); err.textContent="";
+  fetch(API+"/api/cloud/google-login",{method:"POST"}).then(function(r){return r.json();}).then(function(res){
+    if(res.ok){ toast("已開啟瀏覽器，用 Google 登入授權後會自動連結"); closeCloud(); }
+    else err.textContent=res.error||"無法開啟 Google 登入";
+  }).catch(function(e){ err.textContent="無法開啟："+e; });
+}
+function pairCloud(){
+  var code=document.getElementById("cloudCode").value.trim();
+  var err=document.getElementById("cloudErr"); err.textContent="";
+  if(!code){ err.textContent="請先貼上手機那邊產生的配對碼。"; return; }
+  fetch(API+"/api/cloud/pair",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({code:code})})
+    .then(function(r){return r.json();}).then(function(res){
+      if(res.ok){ closeCloud(); toast("已開始同步到手機（約 30 秒內出現）"); }
+      else err.textContent=res.error||"配對失敗";
+    }).catch(function(e){ err.textContent="配對失敗："+e; });
+}
+function unpairCloud(){
+  fetch(API+"/api/cloud/unpair",{method:"POST"}).then(function(){ closeCloud(); toast("已取消手機同步"); });
 }
 function relogin(id){
   fetch(API+"/api/accounts/relogin",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({id:id})})

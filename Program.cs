@@ -50,7 +50,7 @@ namespace ClaudeQuotaMonitor
 
     static class Program
     {
-        public const string VERSION = "v1.2.3";
+        public const string VERSION = "v1.2.5";
         public const int PORT = 45900;
         public const string USAGE_URL = "https://api.anthropic.com/api/oauth/usage";
         public const string PROFILE_URL = "https://api.anthropic.com/api/oauth/profile";  // returns account.email/display_name
@@ -77,6 +77,38 @@ namespace ClaudeQuotaMonitor
 
         static volatile string CliEmail;   // email of the account the local Claude CLI is currently logged into (null = none/no CLI)
         static string _claudeExe;           // cached path to claude.exe
+
+        // ---- optional cloud sync (Firebase): push state to the user's own dashboard for phone viewing ----
+        public const string FIREBASE_API_KEY = "AIzaSyBTeuTwtfS5mnzc7lekpuX7ueChZPQArZs";
+        public const string FIREBASE_PROJECT = "claude-quota";
+        // Google desktop OAuth client. Loaded at startup from an embedded "gauth.txt" resource (2 lines:
+        // client id, client secret) so the values aren't committed to the public repo. Desktop client
+        // secrets are not confidential per Google, but this keeps GitHub push-protection happy.
+        static string GOOGLE_CLIENT_ID = "";
+        static string GOOGLE_CLIENT_SECRET = "";
+        public const string GOOGLE_REDIRECT = "http://localhost:45900/gauth";
+        static string GPendingVerifier;
+
+        static void LoadGoogleAuth()
+        {
+            try
+            {
+                string txt = null;
+                byte[] b = Res("gauth.txt");
+                if (b != null) txt = Encoding.UTF8.GetString(b);
+                else { string f = Path.Combine(Application.StartupPath, "gauth.txt"); if (File.Exists(f)) txt = File.ReadAllText(f); }
+                if (txt == null) return;
+                var lines = txt.Replace("\r", "").Split('\n');
+                if (lines.Length >= 1) GOOGLE_CLIENT_ID = lines[0].Trim();
+                if (lines.Length >= 2) GOOGLE_CLIENT_SECRET = lines[1].Trim();
+            }
+            catch (Exception ex) { Log("LoadGoogleAuth: " + ex.Message); }
+        }
+        static string CloudUid;             // the paired user's Firebase uid
+        static string CloudRefresh;         // Firebase refresh token (plaintext in memory; DPAPI on disk)
+        static string CloudIdToken;         // current Firebase id token
+        static long CloudIdExpMs;           // when CloudIdToken expires
+        static string CloudPath { get { return Path.Combine(DataDir, "cloud.json"); } }
 
         static readonly string DataDir =
             Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "ClaudeQuotaMonitor");
@@ -147,6 +179,7 @@ namespace ClaudeQuotaMonitor
         static void Main()
         {
             SetupSingleExe();
+            LoadGoogleAuth();
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
             try { Directory.CreateDirectory(DataDir); } catch { }
@@ -154,6 +187,7 @@ namespace ClaudeQuotaMonitor
             Log("=== Claude Quota Monitor " + VERSION + " starting, port " + PORT + " ===");
 
             LoadAccounts();
+            LoadCloud();
 
             // one shared UA that the endpoint demands, else it 429s hard
             Http.DefaultRequestHeaders.TryAddWithoutValidation("User-Agent", "claude-code/2.0.1");
@@ -225,11 +259,12 @@ namespace ClaudeQuotaMonitor
         {
             var t = new System.Threading.Thread(() =>
             {
-                long lastCli = 0;
+                long lastCli = 0, lastPush = 0;
                 while (true)
                 {
                     try { if (NowMs() - lastCli >= 30000) { RefreshCliStatus(); lastCli = NowMs(); } } catch { }
                     try { PollDue(); } catch (Exception ex) { Log("poll loop error: " + ex.Message); }
+                    try { if (NowMs() - lastPush >= 30000) { PushCloud(); lastPush = NowMs(); } } catch { }
                     Thread.Sleep(5000);
                 }
             });
@@ -453,6 +488,7 @@ namespace ClaudeQuotaMonitor
                 if (ctx.Request.HttpMethod == "OPTIONS") { ctx.Response.StatusCode = 204; ctx.Response.Close(); return; }
 
                 if (path == "/callback") { OAuthCallback(ctx); return; }   // system-browser OAuth redirect lands here
+                if (path == "/gauth") { GoogleCallback(ctx); return; }      // Google sign-in loopback lands here
                 if (path == "/" || path == "/index.html") { ServeDashboard(ctx); return; }
                 if (path == "/api/state") { WriteJson(ctx, BuildState()); return; }
                 if (path == "/api/accounts" && ctx.Request.HttpMethod == "POST") { AddAccount(ctx); return; }
@@ -464,6 +500,10 @@ namespace ClaudeQuotaMonitor
                 if (path == "/api/setup-token/launch" && ctx.Request.HttpMethod == "POST") { LaunchSetupToken(ctx); return; }
                 if (path == "/api/accounts/cli-login" && ctx.Request.HttpMethod == "POST") { CliLoginAdd(ctx); return; }
                 if (path == "/api/accounts/relogin" && ctx.Request.HttpMethod == "POST") { CliLoginRelogin(ctx); return; }
+                if (path == "/api/cloud/pair" && ctx.Request.HttpMethod == "POST") { CloudPair(ctx); return; }
+                if (path == "/api/cloud/google-login" && ctx.Request.HttpMethod == "POST") { CloudGoogleLogin(ctx); return; }
+                if (path == "/api/cloud/status") { CloudStatus(ctx); return; }
+                if (path == "/api/cloud/unpair" && ctx.Request.HttpMethod == "POST") { CloudUnpair(ctx); return; }
                 if (path == "/api/oauth/complete" && ctx.Request.HttpMethod == "POST") { OAuthComplete(ctx); return; }
 
                 ctx.Response.StatusCode = 404; WriteBytes(ctx, "text/plain; charset=utf-8", Encoding.UTF8.GetBytes("404"));
@@ -736,6 +776,183 @@ namespace ClaudeQuotaMonitor
                 WriteJson(ctx, "{\"ok\":true}");
             }
             catch (Exception ex) { WriteJson(ctx, "{\"ok\":false,\"error\":" + JS.Serialize(ex.Message) + "}"); }
+        }
+
+        // -------------------- cloud sync (Firebase) --------------------
+        static void LoadCloud()
+        {
+            try
+            {
+                if (!File.Exists(CloudPath)) return;
+                var d = JS.Deserialize<Dictionary<string, string>>(File.ReadAllText(CloudPath, Encoding.UTF8));
+                if (d == null) return;
+                CloudUid = d.ContainsKey("Uid") ? d["Uid"] : null;
+                if (d.ContainsKey("EncRt") && !string.IsNullOrEmpty(d["EncRt"])) CloudRefresh = Unprotect(d["EncRt"]);
+            }
+            catch (Exception ex) { Log("LoadCloud: " + ex.Message); }
+        }
+        static void SaveCloud()
+        {
+            try
+            {
+                var d = new Dictionary<string, string> {
+                    { "Uid", CloudUid },
+                    { "EncRt", string.IsNullOrEmpty(CloudRefresh) ? null : Protect(CloudRefresh) }
+                };
+                File.WriteAllText(CloudPath, JS.Serialize(d), new UTF8Encoding(false));
+            }
+            catch (Exception ex) { Log("SaveCloud: " + ex.Message); }
+        }
+
+        // Mint/refresh a Firebase id token from the stored refresh token.
+        static bool EnsureFirebaseToken()
+        {
+            if (string.IsNullOrEmpty(CloudRefresh)) return false;
+            if (!string.IsNullOrEmpty(CloudIdToken) && NowMs() < CloudIdExpMs - 60000) return true;
+            try
+            {
+                var post = new HttpRequestMessage(HttpMethod.Post, "https://securetoken.googleapis.com/v1/token?key=" + FIREBASE_API_KEY);
+                post.Content = new FormUrlEncodedContent(new Dictionary<string, string> {
+                    { "grant_type", "refresh_token" }, { "refresh_token", CloudRefresh } });
+                var r = Http.SendAsync(post).Result;
+                string body = r.Content.ReadAsStringAsync().Result;
+                if (!r.IsSuccessStatusCode) { Log("firebase token " + (int)r.StatusCode + " " + Trunc(body, 200)); return false; }
+                var d = JS.Deserialize<Dictionary<string, object>>(body);
+                CloudIdToken = GetStr(d, "id_token");
+                long secs = 3600; try { secs = Convert.ToInt64(GetStr(d, "expires_in")); } catch { }
+                CloudIdExpMs = NowMs() + secs * 1000;
+                string newRt = GetStr(d, "refresh_token");
+                if (!string.IsNullOrEmpty(newRt) && newRt != CloudRefresh) { CloudRefresh = newRt; SaveCloud(); }
+                return !string.IsNullOrEmpty(CloudIdToken);
+            }
+            catch (Exception ex) { Log("EnsureFirebaseToken: " + ex.Message); return false; }
+        }
+
+        // Write the current state to Firestore /states/{uid} as a single JSON string field.
+        static void PushCloud()
+        {
+            try
+            {
+                if (string.IsNullOrEmpty(CloudUid) || string.IsNullOrEmpty(CloudRefresh)) return;
+                if (!EnsureFirebaseToken()) return;
+                string stateJson = BuildState();
+                string docJson = "{\"fields\":{\"json\":{\"stringValue\":" + JS.Serialize(stateJson)
+                    + "},\"updatedAt\":{\"integerValue\":\"" + NowMs() + "\"}}}";
+                string url = "https://firestore.googleapis.com/v1/projects/" + FIREBASE_PROJECT
+                    + "/databases/(default)/documents/states/" + CloudUid;
+                var req = new HttpRequestMessage(new HttpMethod("PATCH"), url);
+                req.Headers.TryAddWithoutValidation("Authorization", "Bearer " + CloudIdToken);
+                req.Content = new StringContent(docJson, Encoding.UTF8, "application/json");
+                var r = Http.SendAsync(req).Result;
+                if (!r.IsSuccessStatusCode) { string b = r.Content.ReadAsStringAsync().Result; Log("cloud push " + (int)r.StatusCode + " " + Trunc(b, 200)); }
+            }
+            catch (Exception ex) { Log("PushCloud: " + ex.Message); }
+        }
+
+        static void CloudPair(HttpListenerContext ctx)
+        {
+            try
+            {
+                var d = JS.Deserialize<Dictionary<string, string>>(ReadBody(ctx));
+                string code = d.ContainsKey("code") ? (d["code"] ?? "").Trim() : "";
+                string json = Encoding.UTF8.GetString(Convert.FromBase64String(code));
+                var p = JS.Deserialize<Dictionary<string, string>>(json);
+                string uid = p.ContainsKey("uid") ? p["uid"] : null;
+                string rt = p.ContainsKey("rt") ? p["rt"] : null;
+                if (string.IsNullOrEmpty(uid) || string.IsNullOrEmpty(rt)) { WriteJson(ctx, "{\"ok\":false,\"error\":\"配對碼格式不對\"}"); return; }
+                CloudUid = uid; CloudRefresh = rt; CloudIdToken = null; CloudIdExpMs = 0;
+                SaveCloud();
+                Task.Run(() => PushCloud());
+                WriteJson(ctx, "{\"ok\":true}");
+            }
+            catch (Exception ex) { WriteJson(ctx, "{\"ok\":false,\"error\":" + JS.Serialize("配對碼無效：" + ex.Message) + "}"); }
+        }
+        static void CloudStatus(HttpListenerContext ctx)
+        {
+            WriteJson(ctx, "{\"paired\":" + (!string.IsNullOrEmpty(CloudUid) && !string.IsNullOrEmpty(CloudRefresh) ? "true" : "false") + "}");
+        }
+        static void CloudUnpair(HttpListenerContext ctx)
+        {
+            CloudUid = null; CloudRefresh = null; CloudIdToken = null; CloudIdExpMs = 0;
+            try { if (File.Exists(CloudPath)) File.Delete(CloudPath); } catch { }
+            WriteJson(ctx, "{\"ok\":true}");
+        }
+
+        // Open the user's default browser to Google sign-in; the loopback redirect lands on /gauth.
+        static void CloudGoogleLogin(HttpListenerContext ctx)
+        {
+            try
+            {
+                if (string.IsNullOrEmpty(GOOGLE_CLIENT_ID)) { WriteJson(ctx, "{\"ok\":false,\"error\":\"這個版本未內建 Google 登入設定，請改用手動配對碼。\"}"); return; }
+                var rng = RandomNumberGenerator.Create();
+                byte[] vb = new byte[32]; rng.GetBytes(vb);
+                string verifier = B64Url(vb), challenge;
+                using (var sha = SHA256.Create()) challenge = B64Url(sha.ComputeHash(Encoding.ASCII.GetBytes(verifier)));
+                lock (Gate) GPendingVerifier = verifier;
+                string url = "https://accounts.google.com/o/oauth2/v2/auth"
+                    + "?client_id=" + Uri.EscapeDataString(GOOGLE_CLIENT_ID)
+                    + "&redirect_uri=" + Uri.EscapeDataString(GOOGLE_REDIRECT)
+                    + "&response_type=code&scope=" + Uri.EscapeDataString("openid email profile")
+                    + "&code_challenge=" + challenge + "&code_challenge_method=S256"
+                    + "&access_type=offline&prompt=select_account";
+                System.Diagnostics.Process.Start(url);
+                WriteJson(ctx, "{\"ok\":true}");
+            }
+            catch (Exception ex) { WriteJson(ctx, "{\"ok\":false,\"error\":" + JS.Serialize(ex.Message) + "}"); }
+        }
+
+        // Loopback landing: exchange Google code -> Google id_token -> Firebase (signInWithIdp) -> pair.
+        static void GoogleCallback(HttpListenerContext ctx)
+        {
+            string msg;
+            try
+            {
+                string code = ctx.Request.QueryString["code"];
+                string error = ctx.Request.QueryString["error"];
+                if (!string.IsNullOrEmpty(error)) msg = "登入未完成：" + error;
+                else if (string.IsNullOrEmpty(code)) msg = "沒有收到授權碼。";
+                else
+                {
+                    string verifier; lock (Gate) verifier = GPendingVerifier;
+                    // 1) code -> Google tokens
+                    var post = new HttpRequestMessage(HttpMethod.Post, "https://oauth2.googleapis.com/token");
+                    post.Content = new FormUrlEncodedContent(new Dictionary<string, string> {
+                        { "grant_type", "authorization_code" }, { "code", code },
+                        { "client_id", GOOGLE_CLIENT_ID }, { "client_secret", GOOGLE_CLIENT_SECRET },
+                        { "redirect_uri", GOOGLE_REDIRECT }, { "code_verifier", verifier ?? "" } });
+                    var tr = Http.SendAsync(post).Result;
+                    string tbody = tr.Content.ReadAsStringAsync().Result;
+                    if (!tr.IsSuccessStatusCode) { Log("google token " + (int)tr.StatusCode + " " + Trunc(tbody, 300)); msg = "Google 換權杖失敗（HTTP " + (int)tr.StatusCode + "）"; }
+                    else
+                    {
+                        string gIdToken = GetStr(JS.Deserialize<Dictionary<string, object>>(tbody), "id_token");
+                        // 2) Google id_token -> Firebase idToken/refreshToken/uid
+                        var fb = new HttpRequestMessage(HttpMethod.Post, "https://identitytoolkit.googleapis.com/v1/accounts:signInWithIdp?key=" + FIREBASE_API_KEY);
+                        string body = "{\"postBody\":" + JS.Serialize("id_token=" + gIdToken + "&providerId=google.com")
+                            + ",\"requestUri\":\"http://localhost\",\"returnSecureToken\":true}";
+                        fb.Content = new StringContent(body, Encoding.UTF8, "application/json");
+                        var fr = Http.SendAsync(fb).Result;
+                        string fbody = fr.Content.ReadAsStringAsync().Result;
+                        if (!fr.IsSuccessStatusCode) { Log("firebase signInWithIdp " + (int)fr.StatusCode + " " + Trunc(fbody, 300)); msg = "連結 Firebase 失敗（HTTP " + (int)fr.StatusCode + "）"; }
+                        else
+                        {
+                            var fd = JS.Deserialize<Dictionary<string, object>>(fbody);
+                            string uid = GetStr(fd, "localId"), rt = GetStr(fd, "refreshToken");
+                            if (string.IsNullOrEmpty(uid) || string.IsNullOrEmpty(rt)) msg = "連結失敗：回傳缺 uid/refreshToken";
+                            else
+                            {
+                                lock (Gate) { CloudUid = uid; CloudRefresh = rt; CloudIdToken = null; CloudIdExpMs = 0; GPendingVerifier = null; }
+                                SaveCloud();
+                                Task.Run(() => PushCloud());
+                                msg = "✅ 已連結成功！用量會開始同步到你的手機儀表板（claude-quota.web.app），請關閉此分頁。";
+                            }
+                        }
+                    }
+                }
+            }
+            catch (Exception ex) { Log("GoogleCallback ex: " + ex.Message); msg = "連結發生錯誤：" + ex.Message; }
+            byte[] b = Encoding.UTF8.GetBytes("<!doctype html><html lang=zh-Hant><meta charset=utf-8><meta name=viewport content='width=device-width,initial-scale=1'><body style=\"font-family:'Microsoft JhengHei',sans-serif;background:#f4efe6;color:#2c2622;text-align:center;padding:80px 24px\"><div style=\"font-size:20px;line-height:1.8\">" + msg + "</div></body></html>");
+            WriteBytes(ctx, "text/html; charset=utf-8", b);
         }
 
         public static void LogLine(string s) { Log(s); }

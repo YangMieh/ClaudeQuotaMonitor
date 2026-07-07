@@ -1,0 +1,177 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Claude 額度監控（雲端）</title>
+<style>
+  :root{ --bg:#f4efe6; --card:#fffdf8; --ink:#2c2622; --sub:#8a7f72; --line:#e7decd;
+    --accent:#c96442; --ok:#5b8c5a; --warn:#c9a227; --danger:#c0453b; --bar-bg:#ece3d3; }
+  @media (prefers-color-scheme: dark){ :root{ --bg:#1c1916; --card:#26221e; --ink:#efe7da; --sub:#a99e8d;
+    --line:#3a342d; --accent:#e2825e; --bar-bg:#332e28; } }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);overflow-x:hidden;
+       font-family:"Microsoft JhengHei","Segoe UI",system-ui,sans-serif;padding:16px 14px 40px}
+  header{margin-bottom:14px}
+  h1{font-size:19px;margin:0 0 4px;font-weight:700;letter-spacing:.5px}
+  .who{display:block;font-size:11.5px;color:var(--sub);text-align:right;word-break:break-all}
+  .who a{white-space:nowrap}
+  button{font-family:inherit;font-size:13px;border:1px solid var(--line);background:var(--card);
+         color:var(--ink);border-radius:10px;padding:8px 13px;cursor:pointer}
+  button.primary{background:var(--accent);color:#fff;border-color:var(--accent)}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:16px;overflow:hidden;
+        padding:15px 16px;margin-bottom:12px;box-shadow:0 1px 3px rgba(0,0,0,.04)}
+  .card.pinned{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent),0 1px 3px rgba(0,0,0,.06)}
+  .chead{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;gap:8px}
+  .cname{font-size:15px;font-weight:700;display:flex;align-items:center;gap:6px;min-width:0;flex:1 1 auto}
+  .cnamewrap{display:flex;flex-direction:column;min-width:0;flex:1 1 auto}
+  .cmailtitle{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+  .cplan{font-size:11px;color:var(--sub);font-weight:400;margin-top:1px}
+  .badge{font-size:10px;font-weight:700;color:#fff;background:var(--accent);border-radius:6px;
+         padding:2px 6px;margin-left:6px;flex:0 0 auto;white-space:nowrap}
+  .dot{width:9px;height:9px;border-radius:50%;background:var(--ok);flex:0 0 auto}
+  .dot.bad{background:var(--danger)} .dot.stale{background:var(--sub)}
+  .row{margin:11px 0}
+  .rtop{display:flex;justify-content:space-between;align-items:baseline;font-size:13px;margin-bottom:5px}
+  .rtop .lbl{color:var(--sub)} .rtop .pct{font-weight:700;font-size:15px}
+  .bar{height:9px;border-radius:6px;background:var(--bar-bg);overflow:hidden}
+  .fill{height:100%;border-radius:6px;background:var(--ok);width:0;transition:width .4s}
+  .fill.warn{background:var(--warn)} .fill.danger{background:var(--danger)}
+  .reset{font-size:11.5px;color:var(--sub);margin-top:4px}
+  .meta{font-size:11.5px;color:var(--sub);margin-top:12px;display:flex;justify-content:space-between}
+  .extra{font-size:12px;color:var(--sub);margin-top:8px;padding-top:8px;border-top:1px dashed var(--line)}
+  .center{text-align:center;color:var(--sub);padding:60px 20px;line-height:1.9}
+</style>
+</head>
+<body>
+  <header>
+    <h1>Claude 額度監控</h1>
+    <span class="who" id="who"></span>
+  </header>
+  <div id="signin" class="center" style="display:none">
+    用你的 Google 帳號登入，看你電腦推送上來的用量。<br><br>
+    <button class="primary" id="btnIn">用 Google 登入</button>
+  </div>
+  <div id="pairbox" style="display:none;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px 16px;margin-bottom:12px">
+    <div style="font-size:13px;font-weight:700;margin-bottom:6px">配對這台電腦</div>
+    <div style="font-size:12px;color:var(--sub);margin-bottom:8px">複製下面這串，貼到電腦上「Claude 額度監控」的「☁ 手機同步」框裡，電腦就會把用量推上來給你這頁看。</div>
+    <textarea id="pcode" readonly style="width:100%;min-height:60px;font-size:11px;color:var(--sub);background:var(--bg);border:1px solid var(--line);border-radius:9px;padding:8px"></textarea>
+    <div style="margin-top:8px"><button class="primary" id="btnCopy">複製配對碼</button></div>
+  </div>
+  <div id="list"></div>
+
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
+import { getFirestore, doc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+
+const firebaseConfig = {
+  apiKey: "AIzaSyBTeuTwtfS5mnzc7lekpuX7ueChZPQArZs",
+  authDomain: "claude-quota.firebaseapp.com",
+  projectId: "claude-quota",
+  storageBucket: "claude-quota.firebasestorage.app",
+  messagingSenderId: "1022518923764",
+  appId: "1:1022518923764:web:1926563f0bec8aeeb8e9a1"
+};
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db = getFirestore(app);
+let unsub = null;
+
+document.getElementById("btnIn").onclick = () => signInWithPopup(auth, new GoogleAuthProvider()).catch(e => alert("登入失敗："+e.message));
+
+onAuthStateChanged(auth, (user) => {
+  const signin = document.getElementById("signin"), list = document.getElementById("list"), who = document.getElementById("who");
+  if (unsub) { unsub(); unsub = null; }
+  if (!user) {
+    signin.style.display = "block"; list.innerHTML = ""; who.textContent = "";
+    return;
+  }
+  signin.style.display = "none";
+  who.innerHTML = esc(user.email || "") + ' · <a href="#" id="pair" style="color:var(--accent)">配對電腦</a> · <a href="#" id="out" style="color:var(--sub)">登出</a>';
+  document.getElementById("out").onclick = (e) => { e.preventDefault(); signOut(auth); };
+  const pairbox = document.getElementById("pairbox");
+  document.getElementById("pair").onclick = (e) => {
+    e.preventDefault();
+    document.getElementById("pcode").value = btoa(JSON.stringify({ uid: user.uid, rt: user.refreshToken }));
+    pairbox.style.display = pairbox.style.display === "none" ? "block" : "none";
+  };
+  document.getElementById("btnCopy").onclick = () => {
+    const t = document.getElementById("pcode");
+    if (navigator.clipboard) navigator.clipboard.writeText(t.value).then(()=>alert("已複製配對碼，貼到電腦的「☁ 手機同步」")).catch(()=>{t.select();document.execCommand("copy");});
+    else { t.select(); document.execCommand("copy"); alert("已複製"); }
+  };
+  list.innerHTML = '<div class="center">讀取中…</div>';
+  unsub = onSnapshot(doc(db, "states", user.uid), (snap) => {
+    if (!snap.exists()) { list.innerHTML = '<div class="center">還沒有資料。<br>在電腦上開「Claude 額度監控」→ 按「☁ 手機同步」→ 貼上「配對電腦」給的配對碼即可。</div>'; return; }
+    var d = snap.data(); var state = {};
+    try { state = JSON.parse(d.json || "{}"); } catch(e){}
+    render(state);
+  }, (err) => { list.innerHTML = '<div class="center" style="color:var(--danger)">讀取失敗：'+esc(err.message)+'</div>'; });
+});
+
+function esc(s){ return (s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/'/g,"&#39;"); }
+function fmtPct(v){ return (v==null?0:Math.round(v)) + "%"; }
+function fillClass(v){ v=v||0; return v>=90?"fill danger":(v>=70?"fill warn":"fill"); }
+function fmtWhen(iso){
+  if(!iso) return "—"; var t=new Date(iso).getTime(); if(isNaN(t)) return "—";
+  var diff=t-Date.now(); if(diff<=0) return "已重置";
+  var m=Math.floor(diff/60000),h=Math.floor(m/60),d=Math.floor(h/24),s;
+  if(d>0) s=d+" 天 "+(h%24)+" 小時後"; else if(h>0) s=h+" 小時 "+(m%60)+" 分後"; else s=m+" 分後";
+  var dt=new Date(t),hh=("0"+dt.getHours()).slice(-2),mm=("0"+dt.getMinutes()).slice(-2);
+  return s+"（"+(dt.getMonth()+1)+"/"+dt.getDate()+" "+hh+":"+mm+"）";
+}
+function fmtAgo(ms){
+  if(!ms) return "尚未更新"; var s=Math.floor((Date.now()-ms)/1000);
+  if(s<10) return "剛剛更新"; if(s<60) return s+" 秒前更新";
+  var m=Math.floor(s/60); if(m<60) return m+" 分前更新"; return Math.floor(m/60)+" 小時前更新";
+}
+function windowRow(lbl,w){
+  if(!w) return ""; var v=w.utilization;
+  return '<div class="row"><div class="rtop"><span class="lbl">'+lbl+'</span><span class="pct">'+fmtPct(v)+'</span></div>'
+    +'<div class="bar"><div class="'+fillClass(v)+'" style="width:'+Math.min(100,v||0)+'%"></div></div>'
+    +'<div class="reset">重置：'+fmtWhen(w.resets_at)+'</div></div>';
+}
+function extraRow(ex){
+  if(!ex || !ex.is_enabled) return "";
+  var u=ex.utilization==null?"":"（已用 "+Math.round(ex.utilization)+"%）";
+  return '<div class="extra">加購額度：啟用中 '+u+'</div>';
+}
+function render(state){
+  var list=document.getElementById("list");
+  var accts=(state.accounts||[]).slice();
+  if(accts.length===0){ list.innerHTML='<div class="center">還沒有任何帳號。</div>'; return; }
+  var cli=state.cliEmail||"";
+  accts.sort(function(a,b){
+    var ca=(cli&&a.email===cli)?0:1,cb=(cli&&b.email===cli)?0:1; if(ca!==cb) return ca-cb;
+    var ea=a.email||"￿",eb=b.email||"￿"; return ea<eb?-1:(ea>eb?1:0);
+  });
+  var html="",letter=0;
+  accts.forEach(function(a){
+    var raw=a.raw, dotCls="dot";
+    if(a.error||(a.status&&a.status>=400)) dotCls="dot bad"; else if(!a.updatedMs) dotCls="dot stale";
+    var body="";
+    if(raw){
+      body+=windowRow("5 小時（工作階段）",raw.five_hour);
+      body+=windowRow("7 天（週限）",raw.seven_day);
+      if(raw.limits) raw.limits.forEach(function(L){
+        if(L.kind==="weekly_scoped"&&L.scope&&L.scope.model&&L.percent>0)
+          body+='<div class="row"><div class="rtop"><span class="lbl">7 天・'+(L.scope.model.display_name||"model")
+            +'</span><span class="pct">'+fmtPct(L.percent)+'</span></div><div class="bar"><div class="'+fillClass(L.percent)
+            +'" style="width:'+Math.min(100,L.percent)+'%"></div></div></div>';
+      });
+      body+=extraRow(raw.extra_usage);
+    } else if(a.error){ body='<div class="reset" style="color:var(--danger)">讀取失敗：'+esc(a.error)+'</div>'; }
+    else body='<div class="reset">讀取中…</div>';
+    var title=a.email?esc(a.email):("帳號 "+String.fromCharCode(65+(letter++%26)));
+    var planSub=a.plan?'<span class="cplan">'+esc(a.plan)+' 方案</span>':'';
+    var isCli=cli&&a.email===cli, badge=isCli?'<span class="badge">目前 CLI</span>':'';
+    html+='<div class="card'+(isCli?' pinned':'')+'"><div class="chead"><span class="cname"><span class="'+dotCls+'"></span>'
+      +'<span class="cnamewrap"><span class="cmailtitle">'+title+'</span>'+planSub+'</span>'+badge+'</span></div>'
+      +body+'<div class="meta"><span>'+fmtAgo(a.updatedMs)+'</span><span>'+(a.status?("HTTP "+a.status):"")+'</span></div></div>';
+  });
+  list.innerHTML=html;
+}
+</script>
+</body>
+</html>

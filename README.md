@@ -8,7 +8,9 @@ A tiny Windows desktop app that watches the usage of one or more **Claude subscr
 
 Author / 作者: [YangMieh](https://github.com/YangMieh) (小咩)
 
-Version / 版本: v1.2.3
+Version / 版本: v1.2.5
+
+Phone dashboard / 手機儀表板: **https://claude-quota.web.app** (sign in with Google / 用 Google 登入)
 
 ---
 
@@ -19,6 +21,7 @@ Version / 版本: v1.2.3
 - Adds an account by running the official `claude` login **into an isolated config folder**, so it never touches your real `~/.claude` login.
 - Reads the subscription-usage token the login produces, refreshes it automatically, and never asks you to copy-paste anything.
 - Tokens are stored per-Windows-user, DPAPI-encrypted; the exe itself ships with zero tokens.
+- Optional cloud sync: sign in with Google once and the PC pushes your usage to your own dashboard at **https://claude-quota.web.app**, so you can watch it from your phone or any browser. Only the usage numbers are pushed — tokens never leave the PC.
 
 <!-- -->
 
@@ -29,6 +32,17 @@ Version / 版本: v1.2.3
 - 加帳號 = 把官方 `claude` 登入**跑進一個獨立設定資料夾**，完全不動你真正的 `~/.claude` 登入。
 - 讀取登入產生的訂閱用量權杖、自動續命，全程不用你複製貼上任何東西。
 - 權杖以 Windows 使用者身分 DPAPI 加密存放；exe 本身不含任何權杖。
+- 可選的雲端同步：用 Google 登入一次，電腦就會把用量推到你自己的儀表板 **https://claude-quota.web.app**，手機或任何瀏覽器都能看。只推用量數字，權杖永遠留在電腦。
+
+---
+
+## Phone / cloud dashboard · 手機 / 雲端儀表板
+
+Open **https://claude-quota.web.app** and sign in with Google. On the desktop app click "☁ 手機同步" then "用 Google 登入同步" (the same Google account) — the PC pushes your usage to the cloud every 30 seconds and the phone page updates live. Only usage data is synced; your Claude tokens stay encrypted on the PC.
+
+<!-- -->
+
+開 **https://claude-quota.web.app** 用 Google 登入。桌面程式點「☁ 手機同步」→「用 Google 登入同步」（同一個 Google 帳號）——電腦每 30 秒把用量推上雲，手機那頁即時更新。只同步用量數字，Claude 權杖永遠加密留在電腦。
 
 ---
 
