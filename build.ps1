@@ -39,6 +39,7 @@ $args = @(
   "/win32icon:$dir\icon.ico",
   "/win32manifest:$dir\app.manifest",
   "/platform:x64",
+  "/codepage:65001",
   "/optimize+",
   "/nologo"
 ) + $refArgs + $resArgs + @("$dir\Program.cs")

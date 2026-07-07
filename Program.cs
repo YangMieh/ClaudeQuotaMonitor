@@ -23,6 +23,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Web.Script.Serialization;
 using System.Windows.Forms;
+using Microsoft.Win32;
 using Microsoft.Web.WebView2.Core;
 using Microsoft.Web.WebView2.WinForms;
 
@@ -50,7 +51,7 @@ namespace ClaudeQuotaMonitor
 
     static class Program
     {
-        public const string VERSION = "v1.2.5";
+        public const string VERSION = "v1.2.6";
         public const int PORT = 45900;
         public const string USAGE_URL = "https://api.anthropic.com/api/oauth/usage";
         public const string PROFILE_URL = "https://api.anthropic.com/api/oauth/profile";  // returns account.email/display_name
@@ -204,8 +205,10 @@ namespace ClaudeQuotaMonitor
                 try { if (Tray != null) { Tray.Visible = false; Tray.Dispose(); } } catch { }
             };
 
-            // open the dashboard window on first launch
-            OpenWindow();
+            // only a boot launch carrying --tray stays in the tray; a manual launch always opens the window
+            bool trayStart = false;
+            try { foreach (var a in Environment.GetCommandLineArgs()) if (a == "--tray") trayStart = true; } catch { }
+            if (!trayStart) OpenWindow();
             Application.Run();
         }
 
@@ -1070,6 +1073,42 @@ namespace ClaudeQuotaMonitor
             return null;
         }
 
+        // -------------------- auto-start on boot (HKCU Run key) + start-minimized setting --------------------
+        const string RUN_KEY = @"Software\Microsoft\Windows\CurrentVersion\Run";
+        const string RUN_NAME = "ClaudeQuotaMonitor";
+        const string APP_KEY = @"Software\ClaudeQuotaMonitor";
+        static bool IsAutoStart()
+        {
+            try { using (var k = Registry.CurrentUser.OpenSubKey(RUN_KEY)) return k != null && k.GetValue(RUN_NAME) != null; }
+            catch { return false; }
+        }
+        static void SetAutoStart(bool on)
+        {
+            try
+            {
+                using (var k = Registry.CurrentUser.OpenSubKey(RUN_KEY, true) ?? Registry.CurrentUser.CreateSubKey(RUN_KEY))
+                {
+                    // boot launch adds --tray only when "start minimized" is on, so boot stays silently in the tray
+                    if (on) k.SetValue(RUN_NAME, "\"" + Application.ExecutablePath + "\"" + (IsStartMinimized() ? " --tray" : ""));
+                    else if (k.GetValue(RUN_NAME) != null) k.DeleteValue(RUN_NAME, false);
+                }
+            }
+            catch (Exception ex) { Log("SetAutoStart: " + ex.Message); }
+        }
+        // Start minimized: only affects the boot auto-start (a manual launch always opens the window).
+        // It is stored as a preference and applied by (re)writing the Run key with/without --tray.
+        static bool IsStartMinimized()
+        {
+            try { using (var k = Registry.CurrentUser.OpenSubKey(APP_KEY)) return k != null && "1".Equals(Convert.ToString(k.GetValue("StartMinimized"))); }
+            catch { return false; }
+        }
+        static void SetStartMinimized(bool on)
+        {
+            try { using (var k = Registry.CurrentUser.CreateSubKey(APP_KEY)) k.SetValue("StartMinimized", on ? "1" : "0"); }
+            catch (Exception ex) { Log("SetStartMinimized: " + ex.Message); }
+            if (IsAutoStart()) SetAutoStart(true);   // re-write the Run key so the --tray flag matches the new setting
+        }
+
         // -------------------- tray + window --------------------
         static void SetupTray()
         {
@@ -1079,10 +1118,15 @@ namespace ClaudeQuotaMonitor
             Tray.Visible = true;
 
             var menu = new ContextMenuStrip();
-            menu.Items.Add("Open dashboard", null, delegate { OpenWindow(); });
-            menu.Items.Add("Open in browser", null, delegate { try { System.Diagnostics.Process.Start("http://localhost:" + PORT + "/"); } catch { } });
+            // (double-click the tray icon opens the dashboard, so no explicit "open" item is needed)
+            var min = new ToolStripMenuItem("最小化啟動") { CheckOnClick = true, Checked = IsStartMinimized() }; // 最小化啟動(啟動時直接待在匣)
+            min.CheckedChanged += delegate { SetStartMinimized(min.Checked); };
+            menu.Items.Add(min);
+            var auto = new ToolStripMenuItem("開機自動啟動") { CheckOnClick = true, Checked = IsAutoStart() }; // 開機自動啟動
+            auto.CheckedChanged += delegate { SetAutoStart(auto.Checked); };
+            menu.Items.Add(auto);
             menu.Items.Add(new ToolStripSeparator());
-            menu.Items.Add("Exit", null, delegate { Application.Exit(); });
+            menu.Items.Add("結束", null, delegate { Application.Exit(); });                                // 結束
             Tray.ContextMenuStrip = menu;
             Tray.DoubleClick += delegate { OpenWindow(); };
         }
@@ -1123,6 +1167,12 @@ namespace ClaudeQuotaMonitor
             // hide to tray instead of quitting
             e.Cancel = true; Hide();
             base.OnFormClosing(e);
+        }
+        protected override void OnResize(EventArgs e)
+        {
+            base.OnResize(e);
+            // minimize also hides to the tray (out of the taskbar); cloud push keeps running in the background
+            if (WindowState == FormWindowState.Minimized) { Hide(); WindowState = FormWindowState.Normal; }
         }
     }
 

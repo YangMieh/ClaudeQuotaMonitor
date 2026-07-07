@@ -8,7 +8,7 @@ A tiny Windows desktop app that watches the usage of one or more **Claude subscr
 
 Author / 作者: [YangMieh](https://github.com/YangMieh) (小咩)
 
-Version / 版本: v1.2.5
+Version / 版本: v1.2.6
 
 Phone dashboard / 手機儀表板: **https://claude-quota.web.app** (sign in with Google / 用 Google 登入)
 
@@ -135,6 +135,8 @@ powershell -ExecutionPolicy Bypass -File build.ps1
 - Confirmed the only usage-capable token comes from a normal `claude` sign-in. Discovered `CLAUDE_CONFIG_DIR` lets each sign-in live in its own folder.
 - Final design: run `claude auth login` into an isolated folder, read the token, delete the folder, and self-refresh. Verified end to end — multiple accounts, correct scope, auto-refresh, and the main CLI login untouched.
 - Added: current-CLI-account pinning via `claude auth status --json`, plan tier under the email, and a re-login button that only appears when a card goes offline.
+- v1.2.5: optional Firebase cloud sync. Sign in with Google on the desktop app (desktop OAuth + PKCE) and it pushes usage to https://claude-quota.web.app, viewable from any phone or browser. Only usage numbers are synced; tokens stay encrypted on the PC. The mobile page is a PWA, so "Add to Home Screen" installs it like an app and no native APK/iOS build is needed.
+- v1.2.6: system-tray polish — minimize or close hides to the tray, plus an "auto-start on boot" toggle and an optional "start minimized" for boot. Cloud push keeps running in the background regardless of the window.
 
 <!-- -->
 
@@ -145,3 +147,5 @@ powershell -ExecutionPolicy Bypass -File build.ps1
 - 確認能讀用量的權杖只有「一般 `claude` 登入」會產生。發現 `CLAUDE_CONFIG_DIR` 可以讓每次登入各自住在自己的資料夾。
 - 最終設計：把 `claude auth login` 跑進獨立資料夾、讀出權杖、刪掉資料夾、自己刷新。端到端實測通過——多帳號、範圍正確、自動刷新，且主 CLI 登入完全沒被動到。
 - 另加：用 `claude auth status --json` 置頂目前 CLI 帳號、email 下方顯示訂閱方案、卡片斷線時才出現的重新登入鈕。
+- v1.2.5：可選的 Firebase 雲端同步。桌面用 Google 登入（桌面 OAuth + PKCE），把用量推到 https://claude-quota.web.app，手機或任何瀏覽器都能看。只同步用量數字，權杖仍加密留在電腦。手機頁是 PWA，「加到主畫面」就裝成 App，不用寫原生 APK/iOS。
+- v1.2.6：系統匣打磨——最小化或關閉都縮到匣，加上「開機自動啟動」開關與可選的「最小化啟動」（給開機用）。雲端推送跟視窗無關，縮小也照推。
