@@ -1,0 +1,15 @@
+{
+  "name": "Claude 額度監控",
+  "short_name": "額度監控",
+  "description": "一眼盯著你的 Claude 訂閱帳號用量",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#f4efe6",
+  "theme_color": "#c96442",
+  "icons": [
+    { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" }
+  ]
+}
