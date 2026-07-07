@@ -8,7 +8,7 @@ A tiny Windows desktop app that watches the usage of one or more **Claude subscr
 
 Author / 作者: [YangMieh](https://github.com/YangMieh) (小咩)
 
-Version / 版本: v1.2.2
+Version / 版本: v1.2.3
 
 ---
 
@@ -80,7 +80,7 @@ Build with the bundled script (uses the .NET Framework `csc`):
 powershell -ExecutionPolicy Bypass -File build.ps1
 ```
 
-Keep these next to the produced `ClaudeQuotaMonitor.exe`: `dashboard.html`, `icon.ico`, `WebView2Loader.dll`, `Microsoft.Web.WebView2.Core.dll`, `Microsoft.Web.WebView2.WinForms.dll`. Run the exe (normal user rights); it lives in the system tray and opens a window. To add an account, click "+ 加入帳號" then "開始登入" and authorize in the browser that pops up.
+The build produces a **single self-contained `ClaudeQuotaMonitor.exe`** — the dashboard, icon and WebView2 dlls are all embedded, so there is just one file to run and to share (the native loader is extracted to `%LOCALAPPDATA%` on first launch). Run it with normal user rights; it lives in the system tray and opens a window. To add an account, click "+ 加入帳號" then "開始登入" and authorize in the browser that pops up.
 
 <!-- -->
 
@@ -92,7 +92,7 @@ Keep these next to the produced `ClaudeQuotaMonitor.exe`: `dashboard.html`, `ico
 powershell -ExecutionPolicy Bypass -File build.ps1
 ```
 
-以下檔案要跟產出的 `ClaudeQuotaMonitor.exe` 放同一夾：`dashboard.html`、`icon.ico`、`WebView2Loader.dll`、`Microsoft.Web.WebView2.Core.dll`、`Microsoft.Web.WebView2.WinForms.dll`。用一般權限執行 exe，它會在系統匣、開一個視窗。加帳號點「＋ 加入帳號」→「開始登入」，在跳出的瀏覽器授權即可。
+產出的是**單一自帶的 `ClaudeQuotaMonitor.exe`**——介面、圖示、WebView2 dll 全部內嵌，所以只有一個檔要跑、要分享（原生 loader 會在首次啟動時自解到 `%LOCALAPPDATA%`）。用一般權限執行，它會在系統匣、開一個視窗。加帳號點「＋ 加入帳號」→「開始登入」，在跳出的瀏覽器授權即可。
 
 ---
 

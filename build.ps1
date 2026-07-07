@@ -21,6 +21,15 @@ $refs = @(
 )
 $refArgs = $refs | ForEach-Object { "/r:$_" }
 
+# Embed everything so the exe runs as a SINGLE file (dlls + html + icon extracted/loaded at runtime).
+$resArgs = @(
+  "/resource:$dir\dashboard.html,dashboard.html",
+  "/resource:$dir\icon.ico,icon.ico",
+  "/resource:$dir\WebView2Loader.dll,WebView2Loader.dll",
+  "/resource:$dir\Microsoft.Web.WebView2.Core.dll,Microsoft.Web.WebView2.Core.dll",
+  "/resource:$dir\Microsoft.Web.WebView2.WinForms.dll,Microsoft.Web.WebView2.WinForms.dll"
+)
+
 $args = @(
   "/target:winexe",
   "/out:$dir\ClaudeQuotaMonitor.exe",
@@ -29,10 +38,9 @@ $args = @(
   "/platform:x64",
   "/optimize+",
   "/nologo"
-) + $refArgs + @("$dir\Program.cs")
+) + $refArgs + $resArgs + @("$dir\Program.cs")
 
-Write-Host "Compiling..." -ForegroundColor Cyan
+Write-Host "Compiling (single-exe, resources embedded)..." -ForegroundColor Cyan
 & $csc $args
 if ($LASTEXITCODE -ne 0) { Write-Host "BUILD FAILED" -ForegroundColor Red; exit 1 }
-Write-Host "OK -> ClaudeQuotaMonitor.exe" -ForegroundColor Green
-Write-Host "Make sure these sit next to the exe: dashboard.html, icon.ico, WebView2Loader.dll, Microsoft.Web.WebView2.*.dll"
+Write-Host "OK -> ClaudeQuotaMonitor.exe (single file; dashboard.html/icon/WebView2 dlls all embedded)" -ForegroundColor Green

@@ -15,6 +15,8 @@ using System.Globalization;
 using System.IO;
 using System.Net;
 using System.Net.Http;
+using System.Reflection;
+using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Text;
 using System.Threading;
@@ -48,7 +50,7 @@ namespace ClaudeQuotaMonitor
 
     static class Program
     {
-        public const string VERSION = "v1.2.2";
+        public const string VERSION = "v1.2.3";
         public const int PORT = 45900;
         public const string USAGE_URL = "https://api.anthropic.com/api/oauth/usage";
         public const string PROFILE_URL = "https://api.anthropic.com/api/oauth/profile";  // returns account.email/display_name
@@ -96,9 +98,55 @@ namespace ClaudeQuotaMonitor
         }
         static long NowMs() { return (long)(DateTime.UtcNow - new DateTime(1970, 1, 1)).TotalMilliseconds; }
 
+        // ---- single-exe support: managed WebView2 dlls load from embedded resources; the native
+        //      WebView2Loader.dll is extracted to LOCALAPPDATA and put on the dll search path. ----
+        [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+        static extern bool SetDllDirectory(string lpPathName);
+
+        static byte[] Res(string name)
+        {
+            using (var s = Assembly.GetExecutingAssembly().GetManifestResourceStream(name))
+            {
+                if (s == null) return null;
+                var b = new byte[s.Length]; int off = 0, n;
+                while (off < b.Length && (n = s.Read(b, off, b.Length - off)) > 0) off += n;
+                return b;
+            }
+        }
+
+        static void SetupSingleExe()
+        {
+            AppDomain.CurrentDomain.AssemblyResolve += delegate (object sender, ResolveEventArgs e)
+            {
+                try
+                {
+                    string sn = new AssemblyName(e.Name).Name;
+                    string res = sn == "Microsoft.Web.WebView2.Core" ? "Microsoft.Web.WebView2.Core.dll"
+                               : sn == "Microsoft.Web.WebView2.WinForms" ? "Microsoft.Web.WebView2.WinForms.dll" : null;
+                    if (res == null) return null;
+                    var bytes = Res(res);
+                    return bytes == null ? null : Assembly.Load(bytes);
+                }
+                catch { return null; }
+            };
+            try
+            {
+                // native loader -> %LOCALAPPDATA%\ClaudeQuotaMonitor\bin (machine-specific, must not roam)
+                string binDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "ClaudeQuotaMonitor", "bin");
+                Directory.CreateDirectory(binDir);
+                string loaderPath = Path.Combine(binDir, "WebView2Loader.dll");
+                var native = Res("WebView2Loader.dll");
+                if (native != null && (!File.Exists(loaderPath) || new FileInfo(loaderPath).Length != native.Length))
+                    File.WriteAllBytes(loaderPath, native);
+                SetDllDirectory(binDir);
+            }
+            catch (Exception ex) { Log("SetupSingleExe native: " + ex.Message); }
+        }
+
         [STAThread]
         static void Main()
         {
+            SetupSingleExe();
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
             try { Directory.CreateDirectory(DataDir); } catch { }
@@ -425,10 +473,10 @@ namespace ClaudeQuotaMonitor
 
         static void ServeDashboard(HttpListenerContext ctx)
         {
-            string file = Path.Combine(Application.StartupPath, "dashboard.html");
-            byte[] html;
-            if (File.Exists(file)) html = File.ReadAllBytes(file);
-            else html = Encoding.UTF8.GetBytes("<h1>dashboard.html missing</h1>");
+            byte[] html = null;
+            try { string file = Path.Combine(Application.StartupPath, "dashboard.html"); if (File.Exists(file)) html = File.ReadAllBytes(file); } catch { }
+            if (html == null) html = Res("dashboard.html");   // single-exe: from embedded resource
+            if (html == null) html = Encoding.UTF8.GetBytes("<h1>dashboard.html missing</h1>");
             WriteBytes(ctx, "text/html; charset=utf-8", html);
         }
 
@@ -797,12 +845,19 @@ namespace ClaudeQuotaMonitor
             catch (Exception ex) { Log("write error: " + ex.Message); }
         }
 
+        // Load the app icon from disk (dev) or the embedded resource (single-exe). null on failure.
+        public static Icon LoadAppIcon()
+        {
+            try { string ico = Path.Combine(Application.StartupPath, "icon.ico"); if (File.Exists(ico)) return new Icon(ico); } catch { }
+            try { using (var s = Assembly.GetExecutingAssembly().GetManifestResourceStream("icon.ico")) if (s != null) return new Icon(s); } catch { }
+            return null;
+        }
+
         // -------------------- tray + window --------------------
         static void SetupTray()
         {
             Tray = new NotifyIcon();
-            string ico = Path.Combine(Application.StartupPath, "icon.ico");
-            try { Tray.Icon = File.Exists(ico) ? new Icon(ico) : SystemIcons.Information; } catch { Tray.Icon = SystemIcons.Information; }
+            try { Icon ic = LoadAppIcon(); Tray.Icon = ic != null ? ic : SystemIcons.Information; } catch { Tray.Icon = SystemIcons.Information; }
             Tray.Text = "Claude Quota Monitor";
             Tray.Visible = true;
 
@@ -830,7 +885,7 @@ namespace ClaudeQuotaMonitor
         {
             Text = "Claude Quota Monitor " + Program.VERSION;
             Width = 460; Height = 720; StartPosition = FormStartPosition.CenterScreen;
-            try { string ico = Path.Combine(Application.StartupPath, "icon.ico"); if (File.Exists(ico)) Icon = new Icon(ico); } catch { }
+            try { Icon ic = Program.LoadAppIcon(); if (ic != null) Icon = ic; } catch { }
             wv = new WebView2 { Dock = DockStyle.Fill };
             Controls.Add(wv);
             Init();
@@ -872,7 +927,7 @@ namespace ClaudeQuotaMonitor
             StartPosition = FormStartPosition.CenterScreen;
             MaximizeBox = false;
             ShowInTaskbar = true;
-            try { string ico = Path.Combine(Application.StartupPath, "icon.ico"); if (File.Exists(ico)) Icon = new Icon(ico); } catch { }
+            try { Icon ic = Program.LoadAppIcon(); if (ic != null) Icon = ic; } catch { }
             wv = new WebView2 { Dock = DockStyle.Fill };
             Controls.Add(wv);
             Init();
