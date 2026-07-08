@@ -12,6 +12,8 @@ Version / 版本: v1.2.6
 
 Phone dashboard / 手機儀表板: **https://claude-quota.web.app** (sign in with Google / 用 Google 登入)
 
+On your phone, use the browser menu's **Add to Home Screen** to install it as an app. / 在手機上用瀏覽器選單的「**加入主畫面 / 新增至主畫面**」就能裝成 App。
+
 ---
 
 ## Features
