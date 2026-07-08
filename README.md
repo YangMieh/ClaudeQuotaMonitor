@@ -32,7 +32,7 @@ Phone dashboard / 手機儀表板: **https://claude-quota.web.app** (sign in wit
 - 加帳號 = 把官方 `claude` 登入**跑進一個獨立設定資料夾**，完全不動你真正的 `~/.claude` 登入。
 - 讀取登入產生的訂閱用量權杖、自動續命，全程不用你複製貼上任何東西。
 - 權杖以 Windows 使用者身分 DPAPI 加密存放；exe 本身不含任何權杖。
-- 可選的雲端同步：用 Google 登入一次，電腦就會把用量推到你自己的儀表板 **https://claude-quota.web.app**，手機或任何瀏覽器都能看。只推用量數字，權杖永遠留在電腦。
+- 可選的雲端同步：用 Google 登入一次，電腦就會把用量推到你自己的儀表板 **<https://claude-quota.web.app>**，手機或任何瀏覽器都能看。只推用量數字，權杖永遠留在電腦。
 
 ---
 
@@ -147,5 +147,5 @@ powershell -ExecutionPolicy Bypass -File build.ps1
 - 確認能讀用量的權杖只有「一般 `claude` 登入」會產生。發現 `CLAUDE_CONFIG_DIR` 可以讓每次登入各自住在自己的資料夾。
 - 最終設計：把 `claude auth login` 跑進獨立資料夾、讀出權杖、刪掉資料夾、自己刷新。端到端實測通過——多帳號、範圍正確、自動刷新，且主 CLI 登入完全沒被動到。
 - 另加：用 `claude auth status --json` 置頂目前 CLI 帳號、email 下方顯示訂閱方案、卡片斷線時才出現的重新登入鈕。
-- v1.2.5：可選的 Firebase 雲端同步。桌面用 Google 登入（桌面 OAuth + PKCE），把用量推到 **https://claude-quota.web.app**，手機或任何瀏覽器都能看。只同步用量數字，權杖仍加密留在電腦。手機頁是 PWA，「加到主畫面」就裝成 App，不用寫原生 APK/iOS。
+- v1.2.5：可選的 Firebase 雲端同步。桌面用 Google 登入（桌面 OAuth + PKCE），把用量推到 **<https://claude-quota.web.app>**，手機或任何瀏覽器都能看。只同步用量數字，權杖仍加密留在電腦。手機頁是 PWA，「加到主畫面」就裝成 App，不用寫原生 APK/iOS。
 - v1.2.6：系統匣打磨——最小化或關閉都縮到匣，加上「開機自動啟動」開關與可選的「最小化啟動」（給開機用）。雲端推送跟視窗無關，縮小也照推。
