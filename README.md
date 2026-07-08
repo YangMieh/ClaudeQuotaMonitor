@@ -22,6 +22,7 @@ Phone dashboard / 手機儀表板: **https://claude-quota.web.app** (sign in wit
 - Reads the subscription-usage token the login produces, refreshes it automatically, and never asks you to copy-paste anything.
 - Tokens are stored per-Windows-user, DPAPI-encrypted; the exe itself ships with zero tokens.
 - Optional cloud sync: sign in with Google once and the PC pushes your usage to your own dashboard at **https://claude-quota.web.app**, so you can watch it from your phone or any browser. Only the usage numbers are pushed — tokens never leave the PC.
+- On your phone, open the browser menu and choose **Add to Home Screen** — the dashboard then installs and runs like an app.
 
 <!-- -->
 
@@ -33,6 +34,7 @@ Phone dashboard / 手機儀表板: **https://claude-quota.web.app** (sign in wit
 - 讀取登入產生的訂閱用量權杖、自動續命，全程不用你複製貼上任何東西。
 - 權杖以 Windows 使用者身分 DPAPI 加密存放；exe 本身不含任何權杖。
 - 可選的雲端同步：用 Google 登入一次，電腦就會把用量推到你自己的儀表板 **<https://claude-quota.web.app>**，手機或任何瀏覽器都能看。只推用量數字，權杖永遠留在電腦。
+- 在手機上打開瀏覽器選單，選「**加入主畫面 / 新增至主畫面**」，儀表板就會安裝成、用起來像一個 App。
 
 ---
 
@@ -40,9 +42,13 @@ Phone dashboard / 手機儀表板: **https://claude-quota.web.app** (sign in wit
 
 Open **https://claude-quota.web.app** and sign in with Google. On the desktop app click "☁ 手機同步" then "用 Google 登入同步" (the same Google account) — the PC pushes your usage to the cloud every 30 seconds and the phone page updates live. Only usage data is synced; your Claude tokens stay encrypted on the PC.
 
+Want it to feel like a real app? On your phone, open the browser menu and choose **Add to Home Screen** — the dashboard installs as an icon and opens full-screen, no native APK/iOS build needed.
+
 <!-- -->
 
 開 **https://claude-quota.web.app** 用 Google 登入。桌面程式點「☁ 手機同步」→「用 Google 登入同步」（同一個 Google 帳號）——電腦每 30 秒把用量推上雲，手機那頁即時更新。只同步用量數字，Claude 權杖永遠加密留在電腦。
+
+想更像一個 App？在手機上打開瀏覽器選單，選「**加入主畫面 / 新增至主畫面**」，儀表板就會裝成一個圖示、開起來是全螢幕，不用另外寫原生 APK/iOS。
 
 ---
 
@@ -135,7 +141,7 @@ powershell -ExecutionPolicy Bypass -File build.ps1
 - Confirmed the only usage-capable token comes from a normal `claude` sign-in. Discovered `CLAUDE_CONFIG_DIR` lets each sign-in live in its own folder.
 - Final design: run `claude auth login` into an isolated folder, read the token, delete the folder, and self-refresh. Verified end to end — multiple accounts, correct scope, auto-refresh, and the main CLI login untouched.
 - Added: current-CLI-account pinning via `claude auth status --json`, plan tier under the email, and a re-login button that only appears when a card goes offline.
-- v1.2.5: optional Firebase cloud sync. Sign in with Google on the desktop app (desktop OAuth + PKCE) and it pushes usage to https://claude-quota.web.app, viewable from any phone or browser. Only usage numbers are synced; tokens stay encrypted on the PC. The mobile page is a PWA, so "Add to Home Screen" installs it like an app and no native APK/iOS build is needed.
+- v1.2.5: optional Firebase cloud sync. Sign in with Google on the desktop app (desktop OAuth + PKCE) and it pushes usage to https://claude-quota.web.app, viewable from any phone or browser. Only usage numbers are synced; tokens stay encrypted on the PC. The mobile page is a PWA, so opening the phone browser menu and choosing **Add to Home Screen** installs it like an app — no native APK/iOS build is needed.
 - v1.2.6: system-tray polish — minimize or close hides to the tray, plus an "auto-start on boot" toggle and an optional "start minimized" for boot. Cloud push keeps running in the background regardless of the window.
 
 <!-- -->
@@ -147,5 +153,5 @@ powershell -ExecutionPolicy Bypass -File build.ps1
 - 確認能讀用量的權杖只有「一般 `claude` 登入」會產生。發現 `CLAUDE_CONFIG_DIR` 可以讓每次登入各自住在自己的資料夾。
 - 最終設計：把 `claude auth login` 跑進獨立資料夾、讀出權杖、刪掉資料夾、自己刷新。端到端實測通過——多帳號、範圍正確、自動刷新，且主 CLI 登入完全沒被動到。
 - 另加：用 `claude auth status --json` 置頂目前 CLI 帳號、email 下方顯示訂閱方案、卡片斷線時才出現的重新登入鈕。
-- v1.2.5：可選的 Firebase 雲端同步。桌面用 Google 登入（桌面 OAuth + PKCE），把用量推到 **<https://claude-quota.web.app>**，手機或任何瀏覽器都能看。只同步用量數字，權杖仍加密留在電腦。手機頁是 PWA，「加到主畫面」就裝成 App，不用寫原生 APK/iOS。
+- v1.2.5：可選的 Firebase 雲端同步。桌面用 Google 登入（桌面 OAuth + PKCE），把用量推到 **<https://claude-quota.web.app>**，手機或任何瀏覽器都能看。只同步用量數字，權杖仍加密留在電腦。手機頁是 PWA，在手機瀏覽器選單選「**加入主畫面 / 新增至主畫面**」就會裝成 App，不用寫原生 APK/iOS。
 - v1.2.6：系統匣打磨——最小化或關閉都縮到匣，加上「開機自動啟動」開關與可選的「最小化啟動」（給開機用）。雲端推送跟視窗無關，縮小也照推。
